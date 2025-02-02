@@ -42,22 +42,95 @@ Additionally, install Tesseract OCR and ensure it is configured correctly:
 ## Example Code
 
 ```python
-import pytesseract
-from pdf2image import convert_from_path
-import pandas as pd
+!pip install pandas tabula-py openpyxl
+!pip install pdfplumber
+!pip install pytesseract pillow pandas openpyxl
+!pip install paddlepaddle paddleocr
+!sudo apt install tesseract-ocr
 
-# Convert PDF pages to images
-images = convert_from_path("sample.pdf")
+import re
+from paddleocr import PaddleOCR
+import pdfplumber
+import numpy as np
+from openpyxl import Workbook
 
-# Perform OCR on each page
-text_data = [pytesseract.image_to_string(img) for img in images]
+# Initialize PaddleOCR
+ocr = PaddleOCR(use_angle_cls=True, lang='en')
 
-# Process text and convert to structured format
-# (Add column detection logic here)
+def extract_text_from_pdf(pdf_path):
+    """
+    Extract text from a PDF using PaddleOCR.
+    """
+    extracted_text = ""
 
-# Save to Excel
-df = pd.DataFrame({"Extracted Text": text_data})
-df.to_excel("output.xlsx", index=False)
+    with pdfplumber.open(pdf_path) as pdf:
+        for page in pdf.pages:
+            # Convert the page to an image
+            img = page.to_image()
+            img_pil = img.original  # Get the PIL Image object
+
+            # Convert the PIL Image to a NumPy array
+            img_np = np.array(img_pil)
+
+            # Pass the NumPy array to PaddleOCR for text extraction
+            ocr_result = ocr.ocr(img_np, cls=True)
+            for result in ocr_result[0]:
+                extracted_text += result[1][0] + '\n'
+
+    return extracted_text
+
+def process_extracted_text_to_excel(text, output_file='output.xlsx'):
+    """
+    Process extracted text and save it into an Excel file with specified fields.
+    """
+    # Define the fields (column headers)
+    fields = ["Lot no.Associated lots", "Unit no.", "U/E Lot no.Associated lots", "Unit no.", "U/E"]
+
+    # Prepare data storage
+    rows = []
+    lines = text.split("\n")
+
+    # Locate the start of data after "U/E"
+    data_start_index = 0
+    for i, line in enumerate(lines):
+        if "U/E" in line:  # Look for the last "U/E" header
+            data_start_index = i + 1
+
+    # Process data starting after the last "U/E" header
+    data_lines = lines[data_start_index:]
+    cleaned_lines = [line.strip() for line in data_lines if line.strip()]  # Remove empty lines
+
+    # Chunk data into groups of 5 to match the fields
+    for i in range(0, len(cleaned_lines), 5):
+        chunk = cleaned_lines[i:i + 5]
+        if len(chunk) == 5:  # Ensure full rows
+            rows.append(chunk)
+
+    # Write data to Excel
+    workbook = Workbook()
+    sheet = workbook.active
+
+    # Write headers
+    sheet.append(fields)
+
+    # Write rows
+    for row in rows:
+        sheet.append(row)
+
+    # Save the Excel file
+    workbook.save(output_file)
+    print(f"Data has been saved to {output_file}")
+
+def main(pdf_path):
+    # Step 1: Extract text from the PDF
+    extracted_text = extract_text_from_pdf(pdf_path)
+
+    # Step 2: Process the text and save it to Excel
+    process_extracted_text_to_excel(extracted_text)
+
+# Main execution
+pdf_path = '/content/test.pdf'  # Replace with your PDF file path
+main(pdf_path)
 ```
 ## Contributing
 
